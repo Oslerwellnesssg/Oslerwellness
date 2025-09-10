@@ -1,0 +1,3 @@
+-- Osler Wellness · Inventory + POS (v10 + sku + alias + webhook log)
+-- (same SQL I pasted in chat; included here for convenience)
+-- Paste/Run the version from chat to ensure formatting remains intact.
