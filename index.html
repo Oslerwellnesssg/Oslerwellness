@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Osler Wellness — POS & Stock</title>
+<style>
+  :root{--bg:#0b1220;--card:#0f172a;--border:#264271;--text:#f5f9ff;--muted:#c9d7e6;--thead:#eaf2ff;--thead-bg:#1a2a4d;--accent:#12b886;--warn:#f59e0b;--danger:#ef4444}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#0c152b);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto}
+  header{position:sticky;top:0;background:#0b1220e6;backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+  .wrap{max-width:1100px;margin:0 auto;padding:14px 18px}
+  h1{margin:0;font-size:22px;letter-spacing:.2px;color:#ffffff}
+  .sub{color:#e8f0ff}
+  .tabbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .tab{padding:8px 12px;border:1px solid var(--border);border-radius:999px;background:#112246;color:#eaf2ff;cursor:pointer;font-weight:600}
+  .tab.active{background:#16386e}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;margin-top:12px; box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  label{display:block;margin:.5rem 0 .25rem;color:#d6e2f2;font-weight:600}
+  input,select,textarea{width:100%;background:#0f1f3f;border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px 12px;min-height:42px}
+  textarea{min-height:84px;resize:vertical}
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+  .col-6{grid-column:span 6}.col-4{grid-column:span 4}.col-3{grid-column:span 3}.col-2{grid-column:span 2}.col-12{grid-column:span 12}
+  .btn{padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:#0f223f;color:#eaf2ff;cursor:pointer;font-weight:700}
+  .primary{background:linear-gradient(180deg,#12b886,#0ea5a3);color:#052e2e;border-color:#0ea5a3}
+  .danger{background:#3b0d12;border-color:#7a1f2a;color:#fecdd3}
+  .ghost{background:#101a2e;color:#cfe3ff}
+  table{width:100%;border-collapse:separate;border-spacing:0 6px}
+  thead th{padding:10px 12px;text-align:left;color:var(--thead);background:var(--thead-bg);text-transform:uppercase;letter-spacing:.6px;border-radius:8px}
+  tbody td{padding:10px 12px;background:#0f1f3f;border:1px solid var(--border);border-left:none;border-right:none;color:#f1f6ff;vertical-align:top}
+  tbody tr td:first-child{border-left:1px solid var(--border);border-radius:10px 0 0 10px}
+  tbody tr td:last-child{border-right:1px solid var(--border);border-radius:0 10px 10px 0}
+  .right{text-align:right}
+  .msg{margin:10px 0;padding:12px;border-radius:10px}
+  .ok{background:#0c2a24;border:1px solid #1b5a53;color:#d1fae5}
+  .err{background:#3f1016;border:1px solid #7a1f2a;color:#fecdd3;white-space:pre-wrap}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:#0f223f;color:#eaf2ff;cursor:pointer}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px}
+  .badge.void{background:#3f1016;color:#fecdd3;border-color:#7a1f2a}
+  .actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  dialog{border:none;border-radius:16px;padding:0;background:#0f172a;color:var(--text);width:min(720px,96vw)}
+  dialog::backdrop{background:rgba(8,10,20,.6)}
+  .modal{padding:16px}
+  .modal header{position:unset;background:unset;border:none}
+  .qty-low{color:var(--danger);font-weight:700}
+</style>
+<link rel="icon" type="image/png" href="osler-64.png" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+let sb, patientId=null, products=[];
+const SB_URL = "https://zwocjuiqkmfgtenzjdcy.supabase.co";
+const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b2NqdWlxa21mZ3RlbnpqZGN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5Njk4MDEsImV4cCI6MjA3MjU0NTgwMX0.c4OyvfF3tfFM6uwaEcbUMh6WJJqythetshxThrMuAQg";
+
+function el(id){return document.getElementById(id)}
+function setMsg(type,text){const box=el('msg');box.className='msg '+type;box.textContent=text||''}
+
+async function boot(){
+  sb = supabase.createClient(SB_URL, SB_ANON);
+  document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>showTab(btn.dataset.tab)));
+  el('btnDispense').addEventListener('click', submitDispense);
+  el('btnReceive').addEventListener('click', submitReceive);
+  el('btnTransfer').addEventListener('click', submitTransfer);
+  el('applyPatient').addEventListener('click', ()=>{patientId=el('manualPid').value.trim()||null; renderPatient(); refreshPatientDispensed();});
+  el('addProduct').addEventListener('click', ()=>openProductModal());
+  el('saveProduct').addEventListener('click', saveProductFromModal);
+  el('closeProduct').addEventListener('click', ()=>el('productDlg').close());
+  el('closeTxn').addEventListener('click', ()=>el('txnDlg').close());
+  el('saveTxn').addEventListener('click', saveTxnFromModal);
+  el('voidTxn').addEventListener('click', voidTxnFromModal);
+
+  await loadPatientFromTokenOrManual();
+  await loadProducts();
+  await refreshMovements();
+  await reloadInventory();
+  if (patientId) await refreshPatientDispensed();
+}
+
+function renderPatient(){
+  el('patient').textContent = patientId ? ('Patient: '+patientId) : 'No patient in context — manual mode';
+  document.querySelectorAll('[data-need-patient]').forEach(n=>n.disabled = !patientId);
+}
+
+async function loadPatientFromTokenOrManual(){
+  const token=new URLSearchParams(location.search).get('token');
+  if(!token){ renderPatient(); return; }
+  try{
+    const base64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    const json = JSON.parse(decodeURIComponent(escape(atob(base64))));
+    // Safely extract id if present (Plato format may vary)
+    patientId = (json && json.context && json.context.patient && json.context.patient.id) ? json.context.patient.id : null;
+  }catch{ patientId = null; }
+  renderPatient();
+}
+
+async function loadProducts(){
+  const selIds=['dispenseProduct','receiveProduct','transferProduct'];
+  selIds.forEach(id=>el(id).innerHTML='<option value="">— select —</option>');
+  const { data, error } = await sb.from('products').select('id,name').order('name');
+  if(error){return setMsg('err','Load products error: '+error.message)}
+  products = data||[];
+  for(const p of products){
+    selIds.forEach(id=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; el(id).appendChild(o) })
+  }
+  // add +New
+  selIds.forEach(id=>{
+    const o=document.createElement('option'); o.value='__new__'; o.textContent='＋ New product…'; el(id).appendChild(o);
+  });
+}
+
+function showTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelector('[data-tab="'+name+'"]').classList.add('active');
+  document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=true);
+  document.querySelector('[data-panel="'+name+'"]').hidden=false;
+  if(name==='inventory') reloadInventory();
+  if(name==='movement') refreshMovements();
+  if(name==='patient') refreshPatientDispensed();
+}
+
+function genUUID(){
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+  );
+}
+
+/* -------------------- DISPENSE / RECEIVE / TRANSFER -------------------- */
+function val(id, def=''){const v=el(id).value; return v===''?def:v}
+
+async function submitDispense(){
+  if(!patientId){ return setMsg('err','Please enter a patient ID first (top right).'); }
+  let product = val('dispenseProduct');
+  if(product==='__new__'){
+    openProductModal(); return setMsg('err','Create the product first, then dispense.');
+  }
+  if(!product) return setMsg('err','Choose product');
+
+  const qty = Math.max(1, Number(val('dispenseQty',1)));
+  const doctor = (val('dispenseDoctor')||'').trim() || null;
+  let remarks = (val('dispenseRemarks')||'').trim();
+  if(!remarks) remarks = '1 Tab per day'; // default
+  const loc = val('dispenseLoc','SV');
+  const { error } = await sb.rpc('post_sale_at', {
+    p_product: product, p_loc: loc, p_qty: qty, p_price: 0,
+    p_patient: patientId, p_doctor: doctor, p_remarks: remarks
+  });
+  if(error) return setMsg('err','Dispense failed: '+error.message);
+  setMsg('ok','Dispensed ✔');
+  el('dispenseDoctor').value=''; el('dispenseRemarks').value='';
+  await refreshMovements(); await refreshPatientDispensed(); await reloadInventory();
+}
+
+async function submitReceive(){
+  let product = val('receiveProduct');
+  if(product==='__new__'){ openProductModal(); return setMsg('err','Create the product first, then receive.'); }
+  if(!product) return setMsg('err','Choose product');
+  const qty = Math.max(1, Number(val('receiveQty',1)));
+  const loc = val('receiveLoc','RH1');
+  const { error } = await sb.rpc('receive_stock', { p_product: product, p_loc: loc, p_qty: qty });
+  if(error) return setMsg('err','Receive failed: '+error.message);
+  setMsg('ok','Received ✔');
+  await refreshMovements(); await reloadInventory();
+}
+
+async function submitTransfer(){
+  let product = val('transferProduct');
+  if(product==='__new__'){ setMsg('err','Create the product first via Inventory'); return; }
+  if(!product) return setMsg('err','Choose product');
+  const qty = Math.max(1, Number(val('transferQty',1)));
+  const fromLoc = val('fromLoc','RH1'); const toLoc = val('toLoc','SV');
+  const { error } = await sb.rpc('transfer_stock', { p_product: product, p_from: fromLoc, p_to: toLoc, p_qty: qty });
+  if(error) return setMsg('err','Transfer failed: '+error.message);
+  setMsg('ok','Transferred ✔');
+  await refreshMovements(); await reloadInventory();
+}
+
+/* -------------------- INVENTORY (Add / Edit) -------------------- */
+function openProductModal(prod){
+  el('productDlg').showModal();
+  if(prod){
+    el('pd_id').value = prod.id;
+    el('pd_name').value = prod.name||'';
+    el('pd_barcode').value = prod.barcode||'';
+    el('pd_price').value = prod.sell_price ?? 0;
+    el('pd_mode').textContent = 'Edit product';
+  } else {
+    el('pd_id').value='';
+    el('pd_name').value='';
+    el('pd_barcode').value='';
+    el('pd_price').value='0.00';
+    el('pd_mode').textContent = 'Add product';
+  }
+}
+
+async function saveProductFromModal(){
+  const id = el('pd_id').value || genUUID();
+  const rec = {
+    id, name: el('pd_name').value.trim(),
+    barcode: el('pd_barcode').value.trim() || null,
+    sell_price: parseFloat(el('pd_price').value||'0')||0
+  };
+  if(!rec.name){ return setMsg('err','Please enter a product name'); }
+  const { error } = await sb.from('products').upsert(rec, { onConflict: 'id' });
+  if(error){ return setMsg('err','Save product failed: '+error.message); }
+  el('productDlg').close();
+  setMsg('ok','Product saved ✔');
+  await loadProducts(); await reloadInventory();
+}
+
+/* -------------------- MOVEMENTS (Edit / Void) -------------------- */
+let currentTxn=null;
+function openTxnModal(txn){
+  currentTxn = txn;
+  el('txn_id').textContent = txn.id;
+  el('txn_type').textContent = txn.type + (txn.voided ? ' (voided)' : '');
+  el('tx_doctor').value = txn.doctor_initials||'';
+  el('tx_remarks').value = txn.remarks||'';
+  el('voidBtnText').textContent = txn.voided ? 'Already voided' : 'Void transaction';
+  el('voidTxn').disabled = !!txn.voided;
+  el('txnDlg').showModal();
+}
+
+async function saveTxnFromModal(){
+  if(!currentTxn) return;
+  const patch = {
+    doctor_initials: el('tx_doctor').value || null,
+    remarks: el('tx_remarks').value || null
+  };
+  const { error } = await sb.from('transactions').update(patch).eq('id', currentTxn.id);
+  if(error){ return setMsg('err','Update failed: '+error.message); }
+  el('txnDlg').close();
+  setMsg('ok','Updated ✔'); await refreshMovements(); await refreshPatientDispensed();
+}
+
+async function voidTxnFromModal(){
+  if(!currentTxn) return;
+  let rpc = await sb.rpc('void_transaction', { p_txn: currentTxn.id });
+  if(rpc.error){
+    const { error } = await sb.from('transactions').update({ voided: true }).eq('id', currentTxn.id);
+    if(error){ return setMsg('err','Void failed: '+error.message); }
+  }
+  el('txnDlg').close();
+  setMsg('ok','Voided ✔'); await refreshMovements(); await reloadInventory(); await refreshPatientDispensed();
+}
+
+/* -------------------- LOADERS -------------------- */
+async function reloadInventory(){
+  const body = el('invBody');
+  body.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
+  const { data, error } = await sb.from('products_with_balances')
+    .select('id,name,barcode,sell_price,on_hand_sv,on_hand_rh1,on_hand_total').order('name');
+  if(error){ body.innerHTML = '<tr><td colspan="7" class="muted">Cannot load inventory: '+error.message+'</td></tr>'; return; }
+  body.innerHTML = '';
+  for(const r of (data||[])){
+    const lowSV = (Number(r.on_hand_sv)||0) <= 2 ? 'qty-low':'';
+    const lowRH = (Number(r.on_hand_rh1)||0) <= 2 ? 'qty-low':'';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.name}</td>
+      <td>${r.barcode ?? ''}</td>
+      <td class="right">${(r.sell_price??0).toFixed?.(2) ?? r.sell_price}</td>
+      <td class="right ${lowSV}">${r.on_hand_sv}</td>
+      <td class="right ${lowRH}">${r.on_hand_rh1}</td>
+      <td class="right">${r.on_hand_total}</td>
+      <td class="actions">
+        <button class="btn ghost" onclick='openProductModal(${JSON.stringify(r)})'>Edit</button>
+      </td>`;
+    body.appendChild(tr);
+  }
+  if(!body.children.length){ body.innerHTML = '<tr><td colspan="7" class="muted">No products yet.</td></tr>'; }
+}
+
+async function refreshMovements(){
+  const body = el('mvBody'); body.innerHTML='';
+  const { data, error } = await sb.from('movements_with_products')
+    .select('*').order('created_at',{ascending:false}).limit(300);
+  if(error){ body.innerHTML='<tr><td colspan="11" class="muted">Cannot load: '+error.message+'</td></tr>'; return; }
+  for(const r of (data||[])){
+    const tr=document.createElement('tr');
+    const badge = r.voided ? '<span class="badge void">VOID</span>' : '';
+    tr.innerHTML = `
+      <td>${new Date(r.created_at).toLocaleString()} ${badge}</td>
+      <td>${r.type}</td>
+      <td>${r.product_name||''}</td>
+      <td>${r.from_loc||''}</td>
+      <td>${r.to_loc||''}</td>
+      <td class="right">${r.qty_in||0}</td>
+      <td class="right">${r.qty_out||0}</td>
+      <td>${r.patient_id||''}</td>
+      <td>${r.doctor_initials||''}</td>
+      <td>${r.remarks||''}</td>
+      <td class="actions">
+        <button class="btn ghost" onclick='openTxnModal(${JSON.stringify(r)})'>Edit</button>
+      </td>`;
+    body.appendChild(tr);
+  }
+  if(!body.children.length){ body.innerHTML = '<tr><td colspan="11" class="muted">No records yet.</td></tr>'; }
+}
+
+async function refreshPatientDispensed(){
+  const body = document.querySelector('#ptBody');
+  if(!patientId){ body.innerHTML = '<tr><td colspan="6" class="muted">No patient in context.</td></tr>'; return; }
+  const { data, error } = await sb.from('patient_dispenses')
+    .select('*').eq('patient_id', patientId).order('created_at',{ascending:false}).limit(100);
+  if(error){ body.innerHTML = '<tr><td colspan="6" class="muted">Cannot load: '+error.message+'</td></tr>'; return; }
+  body.innerHTML = '';
+  for(const r of (data||[])){
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td>${new Date(r.created_at).toLocaleString()}</td>
+      <td>${r.type}</td>
+      <td>${r.product_name||''}</td>
+      <td class="right">${r.qty_out||0}</td>
+      <td>${r.doctor_initials||''}</td>
+      <td>${r.remarks||''}</td>`;
+    body.appendChild(tr);
+  }
+  if(!body.children.length){ body.innerHTML = '<tr><td colspan="6" class="muted">No dispenses for this patient yet.</td></tr>'; }
+}
+
+/* -------------------- INIT -------------------- */
+window.addEventListener('DOMContentLoaded', ()=>{showTab('inventory'); boot();});
+</script>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+      <div>
+        <h1>📦 Osler Wellness — POS & Stock</h1>
+        <div id="patient" class="sub" style="margin-top:6px">Loading patient…</div>
+      </div>
+      <div>
+        <label style="margin:0 0 4px; font-size:12px" class="sub">Manual patient ID (fallback)</label>
+        <div class="row">
+          <input id="manualPid" placeholder="e.g., PlatoID-1234" style="min-width:260px"/>
+          <button id="applyPatient" class="btn">Apply</button>
+          <button id="addProduct" class="pill">＋ Add product</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabbar" style="margin-top:10px">
+      <button class="tab" data-tab="patient">Patient</button>
+      <button class="tab" data-tab="dispense">Dispense</button>
+      <button class="tab" data-tab="receive">Receive</button>
+      <button class="tab" data-tab="transfer">Transfer</button>
+      <button class="tab" data-tab="inventory">Inventory</button>
+      <button class="tab" data-tab="movement">Movements</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="msg" class="msg"></div>
+
+  <!-- Inventory -->
+  <section class="card" data-panel="inventory">
+    <h3 style="margin-top:0">Inventory</h3>
+    <div style="overflow:auto">
+      <table>
+        <thead>
+          <tr><th>Product</th><th>Barcode</th><th class="right">Price</th><th class="right">SV</th><th class="right">RH1</th><th class="right">Total</th><th></th></tr>
+        </thead>
+        <tbody id="invBody"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Patient -->
+  <section class="card" data-panel="patient" hidden>
+    <h3 style="margin-top:0">Patient History</h3>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>Date</th><th>Type</th><th>Product</th><th class="right">Qty</th><th>Doctor</th><th>Remarks</th></tr></thead>
+        <tbody id="ptBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Dispense -->
+  <section class="card" data-panel="dispense" hidden>
+    <h3 style="margin-top:0">Dispense</h3>
+    <div class="grid">
+      <div class="col-6"><label>Product</label><select id="dispenseProduct"></select></div>
+      <div class="col-3"><label>Location</label><select id="dispenseLoc"><option>SV</option><option>RH1</option></select></div>
+      <div class="col-3"><label>Quantity</label><input id="dispenseQty" type="number" min="1" value="1" /></div>
+      <div class="col-4"><label>Doctor Initials</label><input id="dispenseDoctor" data-need-patient placeholder="e.g. RH"></div>
+      <div class="col-8"><label>Dosage / Remarks</label><input id="dispenseRemarks" data-need-patient placeholder="1 Tab per day"></div>
+      <div class="col-12"><button id="btnDispense" class="btn primary" data-need-patient>✅ Submit</button></div>
+    </div>
+  </section>
+
+  <!-- Receive -->
+  <section class="card" data-panel="receive" hidden>
+    <h3 style="margin-top:0">Receive from Supplier</h3>
+    <div class="grid">
+      <div class="col-6"><label>Product</label><select id="receiveProduct"></select></div>
+      <div class="col-3"><label>Location</label><select id="receiveLoc"><option>RH1</option><option>SV</option></select></div>
+      <div class="col-3"><label>Receive Qty</label><input id="receiveQty" type="number" min="1" value="1" /></div>
+      <div class="col-12"><button id="btnReceive" class="btn primary">📥 Receive</button></div>
+    </div>
+  </section>
+
+  <!-- Transfer -->
+  <section class="card" data-panel="transfer" hidden>
+    <h3 style="margin-top:0">Transfer between locations</h3>
+    <div class="grid">
+      <div class="col-6"><label>Product</label><select id="transferProduct"></select></div>
+      <div class="col-3"><label>From</label><select id="fromLoc"><option>RH1</option><option>SV</option></select></div>
+      <div class="col-3"><label>To</label><select id="toLoc"><option>SV</option><option>RH1</option></select></div>
+      <div class="col-3"><label>Quantity</label><input id="transferQty" type="number" min="1" value="1" /></div>
+      <div class="col-12"><button id="btnTransfer" class="btn primary">🔁 Transfer</button></div>
+    </div>
+  </section>
+
+  <!-- Movements -->
+  <section class="card" data-panel="movement" hidden>
+    <h3 style="margin-top:0">Movements</h3>
+    <div style="overflow:auto">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Type</th><th>Product</th><th>From</th><th>To</th><th class="right">Qty In</th><th class="right">Qty Out</th><th>Patient</th><th>Doctor</th><th>Remarks</th><th></th></tr>
+        </thead>
+        <tbody id="mvBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- Product modal -->
+<dialog id="productDlg">
+  <div class="modal">
+    <header class="row" style="justify-content:space-between">
+      <h3 id="pd_mode" style="margin:0">Add product</h3>
+      <button id="closeProduct" class="btn">✕</button>
+    </header>
+    <div class="grid">
+      <input id="pd_id" type="hidden">
+      <div class="col-6"><label>Name</label><input id="pd_name"></div>
+      <div class="col-3"><label>Barcode</label><input id="pd_barcode"></div>
+      <div class="col-3"><label>Price</label><input id="pd_price" type="number" step="0.01" value="0.00"></div>
+      <div class="col-12"><button id="saveProduct" class="btn primary">Save</button></div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Txn modal -->
+<dialog id="txnDlg">
+  <div class="modal">
+    <header class="row" style="justify-content:space-between">
+      <div>
+        <h3 style="margin:0">Movement</h3>
+        <div class="muted" style="font-size:12px">ID: <span id="txn_id"></span> — <span id="txn_type"></span></div>
+      </div>
+    </header>
+    <div class="grid">
+      <div class="col-3"><label>Doctor</label><input id="tx_doctor"></div>
+      <div class="col-9"><label>Remarks</label><textarea id="tx_remarks"></textarea></div>
+      <div class="col-12 actions">
+        <button id="voidTxn" class="btn danger"><span id="voidBtnText">Void transaction</span></button>
+        <button id="saveTxn" class="btn primary">Save changes</button>
+      </div>
+      <div class="col-12 right"><button id="closeTxn" class="btn">Close</button></div>
+    </div>
+  </div>
+</dialog>
+
+</body>
+</html>
+
+
+<!-- Live refresh via Supabase Realtime -->
+<script>
+// Set these if not already defined in your page:
+window.SB_URL = window.SB_URL || "https://YOUR-PROJECT.supabase.co";
+window.SB_ANON = window.SB_ANON || "YOUR_SUPABASE_ANON_KEY";
+
+(function initRealtime(){
+  try{
+    const sb = window.supabase ? window.supabase.createClient(window.SB_URL, window.SB_ANON) : null;
+    if(!sb) return;
+    // Stock levels
+    sb.channel('realtime:stock_levels')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_levels' }, () => {
+        if (window.reloadInventory) window.reloadInventory();
+      })
+      .subscribe();
+    // Transactions
+    sb.channel('realtime:transactions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        if (window.refreshMovements) window.refreshMovements();
+        if (window.refreshPatientDispensed) window.refreshPatientDispensed();
+      })
+      .subscribe();
+  }catch(e){ console.warn('Realtime init failed', e); }
+})();
+</script>

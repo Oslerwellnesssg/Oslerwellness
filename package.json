@@ -1,0 +1,17 @@
+{
+  "name": "osler-flow-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo Netlify will bundle functions with esbuild automatically",
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "@netlify/functions": "^2.6.0",
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}
