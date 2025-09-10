@@ -1,7 +1,0 @@
-{
-  "name": "osler-plato-netlify",
-  "private": true,
-  "dependencies": {
-    "@supabase/supabase-js": "^2.45.4"
-  }
-}
