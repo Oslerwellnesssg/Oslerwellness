@@ -1,0 +1,20 @@
+{
+  "name": "Osler Wellness Inventory",
+  "version": "v11-flow-sync",
+  "homepage_url": "https://YOUR_NETLIFY_SITE.netlify.app",
+  "capabilities": {
+    "patient_context": true,
+    "inventory_sync": true
+  },
+  "endpoints": {
+    "health": "https://YOUR_NETLIFY_SITE.netlify.app/.netlify/functions/health",
+    "shopify_flow": "https://YOUR_NETLIFY_SITE.netlify.app/.netlify/functions/shopify-flow"
+  },
+  "env": {
+    "SUPABASE_URL": "https://YOUR-PROJECT.supabase.co",
+    "SUPABASE_ANON_KEY": "YOUR_SUPABASE_ANON_KEY"
+  },
+  "secrets": [
+    "FLOW_SHARED_SECRET"
+  ]
+}
