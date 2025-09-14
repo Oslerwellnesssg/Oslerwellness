@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/><title>Osler Wellness — Records</title>
+
+
+  <style>
+    :root {
+      --bg: #3b4d54;
+      --card: #445a62;
+      --text: #ffffff;
+      --accent: #fe8d3f;
+      --head: #3f5962;
+      --border: #5e757d;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin:0; background: var(--bg); color: var(--text); line-height:1.45; }
+    .container { padding: 20px; max-width: 1200px; margin: 0 auto; }
+    .topbar { display:flex; gap:12px; align-items:center; margin-bottom:16px; }
+    h2, h3 { margin: 0; font-weight: 650; }
+    .btn { border:1px solid var(--border); padding:10px 14px; border-radius:10px; background: var(--accent); color: var(--text); cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.2); transition: transform .06s ease, filter .2s ease; }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:active { transform: translateY(1px); }
+    .btn.secondary { background: transparent; border-color: var(--accent); }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid var(--border); font-size:12px; opacity:.9; }
+    .card { border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; background: var(--card); box-shadow:0 6px 20px rgba(0,0,0,.2); }
+    table { border-collapse: collapse; width:100%; overflow:hidden; border-radius: 8px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    th { background: var(--head); text-align:left; }
+    tr:nth-child(even) td { background: #364950; }
+    td.right { text-align:right; }
+    input, select, textarea { padding:10px; border-radius:10px; border:1px solid var(--border); background:#2b3b41; color: var(--text); outline:none; }
+    input::placeholder { color: #cfe3ea99; }
+    label { font-size: 12px; opacity:.9; }
+    .row { display:flex; gap:12px; flex-wrap: wrap; }
+    .field { display:flex; flex-direction:column; gap:6px; min-width:180px; flex:1 1 180px; }
+    a, a:visited { color: var(--text); }
+  </style>
+
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    window.SB_URL  = "https://zwocjuiqkmfgtenzjdcy.supabase.co";
+    window.SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b2NqdWlxa21mZ3RlbnpqZGN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5Njk4MDEsImV4cCI6MjA3MjU0NTgwMX0.c4OyvfF3tfFM6uwaEcbUMh6WJJqythetshxThrMuAQg";
+    function getQueryParam(name){ const p=new URLSearchParams(window.location.search); return p.get(name)||null; }
+    function safeJwtDecode(token){ try{ const parts=token.split('.'); if(parts.length!==3) return null; const json=atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')); return JSON.parse(decodeURIComponent(escape(json))); }catch(e){ return null; } }
+    function resolvePatientIdFromToken(){ const token=getQueryParam('token'); if(!token) return null; const payload=safeJwtDecode(token);
+      if(payload&&typeof payload==='object'){ const keys=['patient_id','platoId','PlatoID','id','patientId']; for(const k of keys){ if(payload[k]) return String(payload[k]); }
+        if(payload.patient && (payload.patient.id||payload.patient.PlatoID)){ return String(payload.patient.id||payload.patient.PlatoID); }
+        for(const [k,v] of Object.entries(payload)){ if(/id/i.test(k)&&(typeof v==='string'||typeof v==='number')) return String(v); } }
+      return token.length>8 ? token : null;
+    }
+    let CURRENT_PATIENT_ID = null;
+    function initPatientCtx(){ CURRENT_PATIENT_ID = resolvePatientIdFromToken(); }
+    let sb=null; function sbClient(){ if(!sb) sb = supabase.createClient(window.SB_URL, window.SB_ANON); return sb; }
+  </script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>Osler Wellness — Patient Dispense Records</h2>
+    <span id="pid" class="pill">patient: …</span>
+    <div style="flex:1"></div>
+    <button class="btn secondary" onclick="openInventory()">Inventory</button>
+    <button class="btn" onclick="openDispense()">Dispense</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Product</th><th>SKU</th><th class="right">Qty</th>
+          <th>From</th><th>Doc</th><th>Remarks</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="9">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+<script>
+  function openInventory(){ window.open('inventory.html?'+location.search.slice(1), '_blank'); }
+  function openDispense(){ window.open('dispense.html?'+location.search.slice(1), '_blank'); }
+  async function loadRows(){
+    const tbody=document.getElementById('rows');
+    if(!CURRENT_PATIENT_ID){ tbody.innerHTML='<tr><td colspan="9">No patient in context.</td></tr>'; return; }
+    const { data, error } = await sbClient().from('movements_with_products')
+      .select('id,created_at,product_name,sku,qty_out,from_loc,doctor_initials,remarks,voided,type,patient_id')
+      .eq('type','dispense').eq('patient_id', CURRENT_PATIENT_ID)
+      .order('created_at', { ascending:false }).limit(200);
+    if(error){ tbody.innerHTML='<tr><td colspan="9">'+error.message+'</td></tr>'; return; }
+    if(!data?.length){ tbody.innerHTML='<tr><td colspan="9">No dispenses yet.</td></tr>'; return; }
+    const fmt=(s)=>new Date(s).toLocaleString();
+    tbody.innerHTML = data.map(r=>`<tr>
+      <td>${fmt(r.created_at)}</td><td>${r.product_name}</td><td>${r.sku||''}</td>
+      <td class="right">${r.qty_out}</td><td>${r.from_loc||''}</td><td>${r.doctor_initials||''}</td>
+      <td>${r.remarks||''}</td><td>${r.voided?'VOIDED':'OK'}</td>
+      <td><button class="btn" onclick="voidTxn('${r.id}')">Void</button>
+          <button class="btn" style="background:#d45b5b" onclick="deleteTxn('${r.id}')">Delete</button></td></tr>`).join('');
+  }
+  async function voidTxn(id){ if(!confirm('Void this transaction?')) return; const { error } = await sbClient().rpc('void_transaction', { p_txn:id }); if(error) return alert(error.message); loadRows(); }
+  async function deleteTxn(id){ const pw=prompt('Enter delete password (voided only):'); if(pw==null) return; const { error } = await sbClient().rpc('delete_transaction', { p_txn:id, p_password:pw }); if(error) return alert(error.message); loadRows(); }
+  function boot(){ initPatientCtx(); document.getElementById('pid').textContent='patient: '+(CURRENT_PATIENT_ID||'—'); loadRows(); }
+  document.addEventListener('DOMContentLoaded', boot);
+</script>
+</body></html>
