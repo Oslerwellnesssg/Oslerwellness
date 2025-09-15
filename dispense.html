@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Osler Wellness — Dispense</title>
+  <!-- If your app already loads supabase elsewhere, this extra include is harmless -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0f172a; color:#e5e7eb; }
+    .wrap { max-width: 880px; margin: 24px auto; padding: 16px; }
+    .card { background:#111827; border:1px solid #1f2937; border-radius:12px; padding:20px; }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    label { display:block; font-size:13px; color:#9ca3af; margin-top:12px; }
+    input, select, textarea { width:100%; padding:10px 12px; border-radius:10px; background:#0b1220; border:1px solid #1f2937; color:#e5e7eb; }
+    textarea { min-height: 80px; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .btn { margin-top:16px; background:#fb923c; color:#111827; border:none; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; }
+    .pill { display:inline-block; padding:4px 8px; border-radius:999px; font-weight:700; font-size:12px; }
+    .pill-red { background:#fecaca; color:#7f1d1d; }
+    .muted { color:#9ca3af; font-size:12px; }
+    .status { margin-top:14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Dispense</h1>
+      <div class="muted">If stock is insufficient, you’ll be prompted to record a <span class="pill pill-red">PRE‑ORDER</span> instead (no stock change).</div>
+
+      <form id="dispense-form">
+        <label>Product ID
+          <input id="product_id" name="product_id" placeholder="UUID of product" required />
+        </label>
+
+        <div class="row">
+          <label>Location
+            <select id="loc" name="loc">
+              <option value="RH1">RH1 (Raffles)</option>
+              <option value="SV">SV (Star Vista)</option>
+            </select>
+          </label>
+          <label>Quantity
+            <input id="qty" name="qty" type="number" min="1" value="1" required />
+          </label>
+        </div>
+
+        <div class="row">
+          <label>Patient ID
+            <input id="patient_id" name="patient_id" placeholder="optional" />
+          </label>
+          <label>Doctor initials
+            <input id="doctor_initials" name="doctor_initials" placeholder="e.g. LM" />
+          </label>
+        </div>
+
+        <label>Remarks
+          <textarea id="remarks" name="remarks" placeholder="1 Tab per day"></textarea>
+        </label>
+
+        <button class="btn" type="submit">Submit</button>
+        <div id="status" class="status"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // These globals are commonly injected across your app. Fallbacks are left blank;
+    // if you open this standalone, set them via devtools or inline script.
+    window.__SUPABASE_URL = window.__SUPABASE_URL || "";
+    window.__SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY || "";
+
+    // Expose to JS file as well
+    window.__OSLER_ENV__ = {
+      url: window.__SUPABASE_URL,
+      key: window.__SUPABASE_ANON_KEY,
+    };
+  </script>
+  <script src="./dispense.js"></script>
+</body>
+</html>
