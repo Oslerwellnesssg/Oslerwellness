@@ -1,0 +1,173 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/><title>Osler Wellness — Dispense</title>
+  <style>
+    :root { --bg:#3b4d54; --card:#445a62; --text:#ffffff; --accent:#fe8d3f; --head:#3f5962; --border:#5e757d; --danger:#ff6b6b;}
+    *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--text);line-height:1.45}
+    .container{padding:20px;max-width:1200px;margin:0 auto}
+    .topbar{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+    h2,h3{margin:0;font-weight:650}
+    .btn{border:1px solid var(--border);padding:10px 14px;border-radius:10px;background:var(--accent);color:var(--text);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:transform .06s ease,filter .2s ease}
+    .btn:hover{filter:brightness(1.08)} .btn:active{transform:translateY(1px)}
+    .btn.secondary{background:transparent;border-color:var(--accent)}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;opacity:.9}
+    .card{border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;background:var(--card);box-shadow:0 6px 20px rgba(0,0,0,.2)}
+    table{border-collapse:collapse;width:100%;overflow:hidden;border-radius:8px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--border)} th{text-align:left;background:var(--head)}
+    tr:nth-child(even) td{background:#364950} td.right{text-align:right}
+    input,select,textarea{padding:10px;border-radius:10px;border:1px solid var(--border);background:#2b3b41;color:var(--text);outline:none}
+    input::placeholder{color:#cfe3ea99} label{font-size:12px;opacity:.9}
+    .row{display:flex;gap:12px;flex-wrap:wrap} .field{display:flex;flex-direction:column;gap:6px;min-width:180px;flex:1 1 180px}
+    a,a:visited{color:var(--text)}
+  </style>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    // KEEP your original Supabase project
+    window.SB_URL  = "https://zwocjuiqkmfgtenzjdcy.supabase.co";
+    window.SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b2NqdWlxa21mZ3RlbnpqZGN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5Njk4MDEsImV4cCI6MjA3MjU0NTgwMX0.c4OyvfF3tfFM6uwaEcbUMh6WJJqythetshxThrMuAQg";
+
+    function getQueryParam(name){ const p=new URLSearchParams(window.location.search); return p.get(name)||null; }
+    function safeJwtDecode(token){ try{ const parts=token.split('.'); if(parts.length!==3) return null; const json=atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')); return JSON.parse(decodeURIComponent(escape(json))); }catch(e){ return null; } }
+    function resolvePatientIdFromToken(){ const token=getQueryParam('token'); if(!token) return null; const payload=safeJwtDecode(token);
+      if(payload&&typeof payload==='object'){ const keys=['patient_id','platoId','PlatoID','id','patientId']; for(const k of keys){ if(payload[k]) return String(payload[k]); }
+        if(payload.patient && (payload.patient.id||payload.patient.PlatoID)){ return String(payload.patient.id||payload.patient.PlatoID); }
+        for(const [k,v] of Object.entries(payload)){ if(/id/i.test(k)&&(typeof v==='string'||typeof v==='number')) return String(v); } }
+      return token.length>8 ? token : null;
+    }
+    let CURRENT_PATIENT_ID = null;
+    function initPatientCtx(){ CURRENT_PATIENT_ID = resolvePatientIdFromToken(); }
+    let sb=null; function sbClient(){ if(!sb) sb = supabase.createClient(window.SB_URL, window.SB_ANON); return sb; }
+  </script>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <h2>Dispense</h2>
+    <span id="pid" class="pill">patient: …</span>
+    <div style="flex:1"></div>
+    <button class="btn secondary" onclick="window.close()">Close</button>
+  </div>
+  <div class="card">
+    <div class="row" id="line-rows"></div>
+    <div style="margin-top:12px; display:flex; gap:12px;">
+      <button class="btn secondary" onclick="addLine()">Add item</button>
+      <button class="btn" onclick="submitAll()">Submit</button>
+    </div>
+    <div id="msg" style="margin-top:8px; opacity:.9"></div>
+  </div>
+</div>
+<script>
+  const defaultRemarks='1 Tab per day'; const LOCS=['RH1','SV'];
+
+  async function productsList(){
+    const { data } = await sbClient().from('products_with_balances')
+      .select('id,name,sku,on_hand_sv,on_hand_rh1')
+      .order('name');
+    return data||[];
+  }
+
+  function lineTpl(idx, list){
+    return `<div class="card" style="flex:1 1 100%"><div class="row">
+      <div class="field" style="min-width:320px"><label>Product</label>
+        <input list="pdl_${idx}" id="prod_${idx}" placeholder="Type to search by name or SKU"/>
+        <datalist id="pdl_${idx}">${list.map(p=>`<option value="${p.name} [${p.sku||''}] :: ${p.id}"></option>`).join('')}</datalist></div>
+      <div class="field"><label>Location</label><select id="loc_${idx}">${LOCS.map(l=>`<option value="${l}">${l}</option>`).join('')}</select></div>
+      <div class="field"><label>Quantity</label><input id="qty_${idx}" type="number" min="1" step="1" value="1"/></div>
+      <div class="field"><label>Doctor initials</label><input id="doc_${idx}" placeholder="e.g. LS"/></div>
+      <div class="field" style="min-width:260px"><label>Dosage/Remarks</label><input id="rem_${idx}" value="${defaultRemarks}"/></div>
+      <div class="field"><label>&nbsp;</label><button class="btn" style="background:#d45b5b" onclick="removeLine(${idx})">Remove</button></div>
+    </div></div>`;
+  }
+
+  let lineCount=0; let productCache=[];
+
+  function productIdFromInput(val){ const m=/::\s*([0-9a-f-]{36})$/i.exec(val||''); return m?m[1]:null; }
+  function productMetaById(id){
+    return (productCache||[]).find(p=>p.id===id) || null;
+  }
+
+  async function addLine(){
+    if(!productCache.length) productCache=await productsList();
+    const c=document.getElementById('line-rows');
+    c.insertAdjacentHTML('beforeend', lineTpl(lineCount, productCache));
+    lineCount++;
+  }
+
+  function removeLine(i){ const e=document.getElementById('prod_'+i); const w=e?.closest('.card'); if(w) w.remove(); }
+
+  async function submitAll(){
+    const msg=document.getElementById('msg'); msg.textContent='Submitting…';
+    if(!CURRENT_PATIENT_ID){ alert('No patient in context — open from Plato or pass token=…'); return; }
+
+    const ops=[];
+    for(let i=0;i<lineCount;i++){
+      const p=document.getElementById('prod_'+i); if(!p) continue;
+      const id=productIdFromInput(p.value);
+      if(!id) return alert('Line '+(i+1)+': choose a product from the list.');
+      const loc=document.getElementById('loc_'+i).value;
+      const qty=parseInt(document.getElementById('qty_'+i).value||'0',10);
+      const doc=document.getElementById('doc_'+i).value.trim();
+      const rem=document.getElementById('rem_'+i).value.trim()||defaultRemarks;
+      if(!qty||qty<1) return alert('Line '+(i+1)+': quantity must be >=1');
+      const meta = productMetaById(id) || {};
+      ops.push({id,loc,qty,doc,rem,name: meta.name||'', sku: meta.sku||''});
+    }
+    if(!ops.length) return alert('Add at least one item.');
+
+    for (const op of ops) {
+      const res = await sbClient().rpc('post_sale_at', {
+        p_product: op.id,
+        p_loc: op.loc,
+        p_qty: op.qty,
+        p_price: 0,
+        p_patient: CURRENT_PATIENT_ID,
+        p_doctor: op.doc || null,
+        p_remarks: op.rem || null
+      });
+      if (res.error) {
+        const m = (res.error.message || '').toLowerCase();
+        if (m.includes('insufficient stock')) {
+          const ok = confirm(`Insufficient stock at ${op.loc}.\n\nCreate a PRE-ORDER instead (no stock change)?`);
+          if (!ok) return alert('Cancelled.');
+          const res2 = await sbClient().rpc('place_preorder', {
+            p_product: op.id,
+            p_loc: op.loc,
+            p_qty: op.qty,
+            p_patient: CURRENT_PATIENT_ID,
+            p_doctor: op.doc || null,
+            p_remarks: (op.rem || '') + ' [PRE-ORDER]'
+          });
+          if (res2.error) return alert('Pre-order failed: ' + res2.error.message);
+
+          // fire-and-forget email to your Netlify function
+          try {
+            await fetch('/.netlify/functions/notify-preorder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                patientId: CURRENT_PATIENT_ID,
+                productName: op.name || '',
+                sku: op.sku || '',
+                qty: op.qty,
+                location: op.loc,
+                doctor: op.doc || '',
+                remarks: op.rem || '',
+                createdAt: new Date().toISOString()
+              })
+            });
+          } catch (e) { /* ignore email errors */ }
+          continue;
+        }
+        return alert('Error: ' + res.error.message);
+      }
+    }
+    msg.textContent='Done. Opening records…';
+    window.open('records.html?'+location.search.slice(1), '_blank');
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    initPatientCtx();
+    document.getElementById('pid').textContent='patient: '+(CURRENT_PATIENT_ID||'—');
+    addLine();
+  });
+</script>
+</body></html>
