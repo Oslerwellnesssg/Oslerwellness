@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Osler Wellness — Patient Dispense Records</title>
+  <style>
+    :root{--bg:#3b4d54;--card:#445a62;--text:#fff;--accent:#fe8d3f;--head:#3f5962;--border:#5e757d;--danger:#ff6b6b;}
+    *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+    .container{padding:20px;max-width:1200px;margin:0 auto}
+    .topbar{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+    h2{margin:0;font-weight:650}
+    .btn{border:1px solid var(--border);padding:8px 12px;border-radius:10px;background:var(--accent);color:var(--text);cursor:pointer;text-decoration:none}
+    .btn.secondary{background:transparent;border-color:var(--accent)}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;opacity:.9}
+    .card{border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;background:var(--card)}
+    table{border-collapse:collapse;width:100%;overflow:hidden;border-radius:8px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--border)}
+    th{background:var(--head);text-align:left}
+    tr:nth-child(even) td{background:#364950}
+    .row-note{opacity:.8;font-size:13px}
+    .status-pill{padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px}
+    .danger{background:#ff6b6b;border-color:#ff6b6b}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.6/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h2>Osler Wellness — Patient Dispense Records</h2>
+      <span id="patient-pill" class="pill">patient: —</span>
+      <a id="btnInv" class="btn secondary" href="#">Inventory</a>
+      <a id="btnDispense" class="btn" href="#">Dispense</a>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Product</th>
+            <th>SKU</th>
+            <th>Qty</th>
+            <th>From</th>
+            <th>Doc</th>
+            <th>Remarks</th>
+            <th>Unit $</th>
+            <th>Total $</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="11">Loading…</td></tr>
+        </tbody>
+      </table>
+      <div id="note" class="row-note" style="margin-top:10px">
+        Tip: To delete permanently, transaction must be VOIDed first and you need the password.
+      </div>
+    </div>
+  </div>
+
+<script>
+const SB_URL  = window.SB_URL  || "https://YOUR-PROJECT.supabase.co";
+const SB_ANON = window.SB_ANON || "YOUR_PUBLIC_ANON_KEY";
+let sb=null; function sbc(){ if(!sb) sb = supabase.createClient(SB_URL, SB_ANON); return sb; }
+
+function qp(n){ const p=new URLSearchParams(location.search); return p.get(n); }
+function go(h){ location.href = h + location.search; }
+
+document.getElementById('btnInv').onclick = ()=>go('inventory.html');
+document.getElementById('btnDispense').onclick = ()=>go('dispense.html');
+
+const PID = qp('patient') || (function(){ try{
+  const tok = qp('token');
+  if(!tok) return null;
+  const payload = JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+  return payload?.patient_id || payload?.id || Object.values(payload).find(v => typeof v==='string' && v.length>8) || null;
+}catch(e){ return null; } })();
+
+document.getElementById('patient-pill').textContent = 'patient: ' + (PID || '—');
+
+async function loadRows(){
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = '<tr><td colspan="11">Loading…</td></tr>';
+  const { data, error } = await sbc().from('patient_dispenses').select('*').order('created_at', { ascending:false }).limit(200);
+  if(error){ tb.innerHTML = `<tr><td colspan="11">${error.message}</td></tr>`; return; }
+  tb.innerHTML = '';
+  for(const r of data){
+    const d = new Date(r.created_at).toLocaleString();
+    const unit = (r.unit_price!=null) ? ('$'+Number(r.unit_price).toFixed(2)) : '';
+    const total = (r.line_total!=null) ? ('$'+Number(r.line_total).toFixed(2)) : '';
+    tb.insertAdjacentHTML('beforeend', `<tr>
+      <td>${d}</td>
+      <td>${r.product_name||''}</td>
+      <td>${r.sku||''}</td>
+      <td>${r.qty_out||''}</td>
+      <td>${r.from_loc||r.from||''}</td>
+      <td>${r.doctor_initials||''}</td>
+      <td>${r.remarks||''}</td>
+      <td>${unit}</td>
+      <td>${total}</td>
+      <td>${'Dispensed'}</td>
+      <td>
+        <button class="btn secondary" onclick="voidTxn('${r.id}')">Void</button>
+        <button class="btn danger" onclick="deleteTxn('${r.id}')">Delete</button>
+      </td>
+    </tr>`);
+  }
+}
+
+async function voidTxn(id){
+  const ok = confirm('Void this transaction?');
+  if(!ok) return;
+  const { error } = await sbc().rpc('void_transaction', { p_txn: id });
+  if(error) alert(error.message); else loadRows();
+}
+async function deleteTxn(id){
+  const ok = confirm('Delete this transaction? Note: It must be voided first.');
+  if(!ok) return;
+  const { error } = await sbc().from('transactions').delete().eq('id', id);
+  if(error) alert(error.message); else loadRows();
+}
+
+loadRows();
+</script>
+</body>
+</html>
