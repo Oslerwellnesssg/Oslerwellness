@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Movement report</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#1f2937; --panel:#263241; --text:#e5e7eb; --muted:#9ca3af; }
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:Inter,system-ui,Arial; }
+  .shell{ max-width:1100px; margin:30px auto; padding:0 16px; }
+  h1{ margin:0; font-size:24px; }
+  .sub{ color:#cbd5e1; margin-top:6px; }
+  .grid{ display:grid; grid-template-columns:1fr; gap:18px; margin-top:18px; }
+  .card{ background:var(--panel); border:1px solid #334155; border-radius:12px; overflow:hidden; }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ padding:10px 12px; border-bottom:1px solid #344255; font-size:14px; }
+  th{ background:#2b3a4d; text-align:left; color:#cbd5e1; }
+  a{ color:#22d3ee; text-decoration:none; }
+  .bar{ display:flex; align-items:center; gap:10px; }
+  .btn{ background:#334155; color:#cbd5e1; padding:8px 10px; border-radius:8px; border:none; cursor:pointer; }
+</style>
+<script>
+async function loadJSON(url, opts={}){
+  const res = await fetch(url, opts);
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
+}
+function getParam(name){
+  const url = new URL(window.location.href);
+  return url.searchParams.get(name);
+}
+function supaHeaders(token){
+  const h = { "Content-Type":"application/json" };
+  if(token) h["Authorization"] = `Bearer ${token}`;
+  return h;
+}
+
+let SUPA_URL, TOKEN;
+
+async function fetchMovements(){
+  const q = new URL(SUPA_URL + "/rest/v1/movements_with_products");
+  q.searchParams.set("select","id,created_at,voided,type,product_id,product_name,sku,from_loc,to_loc,qty_out,unit_price,patient_id,doctor_initials,remarks");
+  q.searchParams.set("order","created_at.desc");
+  q.searchParams.set("limit","200");
+  const rows = await loadJSON(q.toString(), { headers: supaHeaders(TOKEN) });
+  // Only show dispenses and preorders, separated by location
+  const sv  = rows.filter(r => r.type === 'dispense' && r.from_loc === 'SV');
+  const rh1 = rows.filter(r => r.type === 'dispense' && r.from_loc === 'RH1');
+  return { sv, rh1 };
+}
+
+function rowHTML(r){
+  const patientLink = r.patient_id ? `<a href="https://clinic.platomedical.com/#/patients/${r.patient_id}/details" target="_blank">${r.patient_id}</a>` : "";
+  const price = (r.unit_price == null ? "" : Number(r.unit_price).toFixed(2));
+  const line  = (r.unit_price == null ? "" : (Number(r.unit_price)*Number(r.qty_out||0)).toFixed(2));
+  const status = r.voided ? "VOIDED" : "OK";
+  return `<tr>
+    <td>${new Date(r.created_at).toLocaleString()}</td>
+    <td>${patientLink}</td>
+    <td>${r.product_name||""} (${r.sku||""})</td>
+    <td>${r.qty_out||0}</td>
+    <td>${price}</td>
+    <td>${line}</td>
+    <td>${status}</td>
+  </tr>`;
+}
+
+async function boot(){
+  SUPA_URL = getParam("url") || window.SUPABASE_URL;
+  TOKEN    = getParam("token") || window.SUPABASE_KEY;
+  const { sv, rh1 } = await fetchMovements();
+  const svBody  = document.getElementById("sv-body");
+  const rh1Body = document.getElementById("rh1-body");
+  svBody.innerHTML  = sv.map(rowHTML).join("");
+  rh1Body.innerHTML = rh1.map(rowHTML).join("");
+}
+</script>
+</head>
+<body onload="boot()">
+  <div class="shell">
+    <div class="bar">
+      <h1>Movement report</h1>
+      <a class="btn" href="inventory.html{location.search}">← Back to Inventory</a>
+    </div>
+    <div class="sub">Last 200 dispenses, split by location.</div>
+
+    <div class="grid">
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th colspan="7">SV</th></tr>
+            <tr><th>Date & Time</th><th>Patient ID</th><th>Product</th><th>Qty</th><th>Unit $</th><th>Line $</th><th>Status</th></tr>
+          </thead>
+          <tbody id="sv-body"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th colspan="7">RH1</th></tr>
+            <tr><th>Date & Time</th><th>Patient ID</th><th>Product</th><th>Qty</th><th>Unit $</th><th>Line $</th><th>Status</th></tr>
+          </thead>
+          <tbody id="rh1-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
