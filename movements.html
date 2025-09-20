@@ -1,0 +1,187 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dispense Movements (SV & RH1)</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.43.1/dist/umd/supabase.js"></script>
+  <style>
+    :root{
+      --bg:#1f2937; --panel:#111827; --muted:#9ca3af; --text:#e5e7eb; --accent:#22d3ee;
+      --table:#0b1220; --row:#0e1726; --rowAlt:#101a2e; --chip:#0ea5e9;
+    }
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+    .top{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+    h1{font-size:24px;margin:0}
+    .hint{color:var(--muted);font-size:13px;margin:6px 0 18px}
+    button{background:#0b1020;border:1px solid #263047;color:var(--text);padding:8px 14px;border-radius:10px;cursor:pointer}
+    button:hover{border-color:#3b4a69}
+    .pill{background:#0b1a2a;border:1px solid #12304a;color:#a1c5ff;border-radius:999px;padding:4px 10px;font-size:12px}
+    .panel{background:var(--panel);border:1px solid #263047;border-radius:16px;padding:14px;margin:16px 0}
+    .sectionTitle{display:flex;align-items:center;gap:10px;margin:4px 0 10px}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .dot.sv{background:#34d399}
+    .dot.rh1{background:#f59e0b}
+    table{width:100%;border-collapse:separate;border-spacing:0 6px}
+    thead th{color:#a3b2d1;text-align:left;font-size:12px;padding:8px 10px}
+    tbody tr{background:var(--row);}
+    tbody tr:nth-child(2n){background:var(--rowAlt);}
+    td{padding:10px;border-top:1px solid #1f2a44;border-bottom:1px solid #1f2a44;font-size:14px}
+    .right{ text-align:right }
+    .sku{color:#93c5fd;font-size:12px}
+    .status{display:inline-block;font-size:11px;background:#0b1e33;border:1px solid #123a63;padding:3px 8px;border-radius:999px}
+    .tag{background:#0b1a2a;color:#93c5fd;border:1px solid #12304a;padding:2px 8px;border-radius:999px;font-size:11px}
+    .footer{color:#8aa0c7;font-size:12px;margin-top:10px}
+    a{color:#7dd3fc;text-decoration:none}
+    .warn{color:#fbbf24}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <button id="btnBack">Inventory</button>
+      <button id="btnRefresh">Refresh</button>
+      <span class="pill">Reads: Supabase → public.movements_with_products</span>
+    </div>
+    <h1>Dispense Movements</h1>
+    <div class="hint">Live view of dispenses only (voided rows hidden). Split by location. Use <span class="tag">Refresh</span> after a Shopify Flow event or click <span class="tag">Inventory</span> to go back.</div>
+
+    <div id="warn" class="warn"></div>
+
+    <div class="panel">
+      <div class="sectionTitle"><div class="dot sv"></div><strong>Star Vista (SV)</strong></div>
+      <table id="tblSV">
+        <thead>
+          <tr>
+            <th>Date/Time</th>
+            <th>Patient ID</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th class="right">Unit $</th>
+            <th class="right">Line $</th>
+            <th>Doctor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="sectionTitle"><div class="dot rh1"></div><strong>Raffles (RH1)</strong></div>
+      <table id="tblRH1">
+        <thead>
+          <tr>
+            <th>Date/Time</th>
+            <th>Patient ID</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th class="right">Unit $</th>
+            <th class="right">Line $</th>
+            <th>Doctor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      Tip: To correct a price captured on a dispense, update <code>transactions.unit_price</code> for that row. To correct future pricing, update <code>products.sell_price</code>.
+    </div>
+  </div>
+
+<script>
+(function(){
+  // You can hardcode your keys here, OR reuse globals created by inventory.html
+  const SUPABASE_URL = window.SUPABASE_URL || "https://YOUR-SUPABASE.supabase.co";
+  const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "YOUR-ANON-KEY";
+
+  if(String(SUPABASE_URL).includes("YOUR-SUPABASE")){
+    const w = document.getElementById('warn');
+    w.textContent = "Missing Supabase URL/Anon Key. Edit movements.html near the top and set SUPABASE_URL and SUPABASE_ANON_KEY (or load this page from inventory.html so it reuses the globals).";
+  }
+
+  const token = new URLSearchParams(location.search).get("token");
+
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false }
+  });
+
+  async function load() {
+    document.body.style.cursor = "progress";
+    // Pull from view; filter dispenses, not voided, newest first
+    const { data, error } = await client
+      .from("movements_with_products")
+      .select("*")
+      .eq("type", "dispense")
+      .eq("voided", false)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    document.body.style.cursor = "default";
+    if (error){ alert("Load error: " + error.message); return; }
+    render(data || []);
+  }
+
+  function fmtMoney(v){ return (v==null? "" : Number(v).toFixed(2)); }
+  function fmtDate(iso){
+    try{ return new Date(iso).toLocaleString(); }catch(e){ return iso || ""; }
+  }
+
+  function render(rows){
+    const byLoc = { SV:[], RH1:[] };
+    rows.forEach(r => {
+      const loc = r.from_loc || r.to_loc || "";
+      if(loc === "SV") byLoc.SV.push(r);
+      else if(loc === "RH1") byLoc.RH1.push(r);
+    });
+
+    function draw(tableId, items){
+      const tb = document.querySelector(tableId + " tbody");
+      tb.innerHTML = "";
+      if(!items.length){
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 8;
+        td.style.color = "#93a4c5";
+        td.textContent = "No dispenses yet.";
+        tr.appendChild(td);
+        tb.appendChild(tr);
+        return;
+      }
+      items.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${fmtDate(r.created_at)}</td>
+          <td>${r.patient_id || ""}</td>
+          <td>${r.product_name || ""} <span class="sku">${r.sku ? "(" + r.sku + ")" : ""}</span></td>
+          <td>${r.qty_out ?? ""}</td>
+          <td class="right">${fmtMoney(r.unit_price)}</td>
+          <td class="right">${fmtMoney(r.line_total)}</td>
+          <td>${r.doctor_initials || ""}</td>
+          <td><span class="status">${(r.remarks||"").includes("PRE-ORDER") ? "PRE-ORDER" : "OK"}</span></td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
+    draw("#tblSV",  byLoc.SV);
+    draw("#tblRH1", byLoc.RH1);
+  }
+
+  document.getElementById("btnRefresh").addEventListener("click", load);
+  document.getElementById("btnBack").addEventListener("click", () => {
+    const url = new URL(location.origin + location.pathname.replace("movements.html","inventory.html"));
+    if(token) url.searchParams.set("token", token);
+    location.href = url.toString();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
