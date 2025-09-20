@@ -1,5 +1,0 @@
-[build]
-  publish = "."
-  functions = "netlify/functions"
-
-# No build step required; pure functions + static HTML
