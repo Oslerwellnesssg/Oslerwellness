@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventory (Live from Shopify)</title>
+  <style>
+    body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#2b3640;color:#e6edf3;margin:0;padding:24px}
+    .wrap{max-width:1100px;margin:0 auto}
+    h1{display:flex;align-items:center;gap:12px;font-size:28px;margin:0 0 8px}
+    .btn{background:#0ea5e9;border:none;color:white;padding:8px 14px;border-radius:10px;cursor:pointer;font-weight:600}
+    .btn.secondary{background:#556270}
+    .hint{background:#1f2937;border:1px solid #334155;border-radius:12px;padding:10px 12px;color:#cbd5e1;margin:10px 0 18px;font-size:14px}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    th,td{padding:12px 16px;text-align:left}
+    thead th{font-size:14px;color:#9fb0be}
+    tbody tr{background:#2f3b46;border-radius:12px}
+    td:first-child, th:first-child{border-top-left-radius:12px;border-bottom-left-radius:12px}
+    td:last-child, th:last-child{border-top-right-radius:12px;border-bottom-right-radius:12px}
+    .tabs{display:flex;gap:8px;margin:8px 0 16px}
+    .tab{padding:8px 12px;border-radius:10px;background:#37424d;cursor:pointer}
+    .tab.active{background:#0ea5e9}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#334155;color:#cbd5e1;font-size:12px}
+    .split{display:flex;gap:16px}
+    .pane{flex:1}
+    .right{float:right}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h1><button id="syncBtn" class="btn">Sync now</button> Inventory (Live from Shopify)</h1>
+    <button id="closeBtn" class="btn secondary">Close</button>
+  </div>
+
+  <div class="hint">
+    <b>How this updates:</b> This reads from <i>Supabase</i>. Shopify Flow pushes each change into Supabase. Click <b>Sync now</b> to force a refresh.
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="inv">Inventory</div>
+    <div class="tab" data-tab="mov">Movement report</div>
+  </div>
+
+  <div id="invTab">
+    <table id="invTbl">
+      <thead>
+        <tr>
+          <th>Product</th><th>SKU</th><th>Barcode</th><th>Price</th><th>SV</th><th>RH1</th><th>Total</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="movTab" style="display:none">
+    <div class="split">
+      <div class="pane">
+        <h3>Dispenses — Star Vista <span id="countSV" class="pill">0</span></h3>
+        <table id="movSV">
+          <thead>
+            <tr><th>Time</th><th>Patient</th><th>Product</th><th>Qty</th><th>Unit $</th><th>Total $</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pane">
+        <h3>Dispenses — Raffles <span id="countRH1" class="pill">0</span></h3>
+        <table id="movRH1">
+          <thead>
+            <tr><th>Time</th><th>Patient</th><th>Product</th><th>Qty</th><th>Unit $</th><th>Total $</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const TOKEN = qs.get("token");            // supply ?token=service_or_anon_key
+const SB_URL = qs.get("url") || "";       // optionally override Supabase URL (else relative)
+const SUPABASE = SB_URL || (window.SUPABASE_URL || "");
+
+function h(v){ return v==null ? "" : v; }
+function fmt(n){ return (n==null) ? "" : Number(n).toFixed(2); }
+
+async function sb(path, opts={}){
+  const url = (SUPABASE || "").replace(/\/+$/,"") + path;
+  const headers = Object.assign({
+    "apikey": TOKEN,
+    "Authorization": "Bearer " + TOKEN,
+    "Content-Type": "application/json"
+  }, opts.headers||{});
+  const r = await fetch(url, Object.assign({}, opts, { headers }));
+  if(!r.ok){ throw new Error(await r.text()); }
+  return r.json();
+}
+
+async function loadInventory(){
+  const rows = await sb(`/rest/v1/v_stock_totals?select=name,sku,sv,rh1,total,products!inner(barcode,sell_price)`);
+  const tbody = document.querySelector("#invTbl tbody");
+  tbody.innerHTML = "";
+  rows.forEach((r)=>{
+    const tr = document.createElement("tr");
+    const price = (r.products && r.products.sell_price) || 0;
+    const barcode = (r.products && r.products.barcode) || "";
+    tr.innerHTML = `<td>${h(r.name)}</td>
+      <td>${h(r.sku)}</td>
+      <td>${h(barcode)}</td>
+      <td>${fmt(price)}</td>
+      <td>${h(r.sv)}</td>
+      <td>${h(r.rh1)}</td>
+      <td>${h(r.total)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function loadMovements(){
+  // We only show type='dispense' and not voided
+  const rows = await sb(`/rest/v1/movements_with_products?select=created_at,patient_id,product_name,qty_out,unit_price,line_total,type,from_loc,voided&order=created_at.desc`);
+  const svBody = document.querySelector("#movSV tbody"); svBody.innerHTML="";
+  const rh1Body = document.querySelector("#movRH1 tbody"); rh1Body.innerHTML="";
+  let cSV=0,cRH1=0;
+  rows.filter(r => r.type === "dispense" && !r.voided).forEach(r=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${new Date(r.created_at).toLocaleString()}</td>
+      <td>${h(r.patient_id)}</td>
+      <td>${h(r.product_name)}</td>
+      <td>${h(r.qty_out)}</td>
+      <td>${fmt(r.unit_price)}</td>
+      <td>${fmt(r.line_total)}</td>
+      <td>OK</td>`;
+    if (r.from_loc === "SV"){ svBody.appendChild(tr); cSV++; }
+    else if (r.from_loc === "RH1"){ rh1Body.appendChild(tr); cRH1++; }
+  });
+  document.getElementById("countSV").textContent = cSV;
+  document.getElementById("countRH1").textContent = cRH1;
+}
+
+document.getElementById("syncBtn").addEventListener("click", async ()=>{
+  try{
+    await fetch("/.netlify/functions/shopify-sync-now");
+    await Promise.all([loadInventory(), loadMovements()]);
+    alert("Refreshed from Supabase.");
+  }catch(e){
+    alert("Sync failed: " + e.message);
+  }
+});
+
+document.getElementById("closeBtn").addEventListener("click", ()=>{ window.history.back(); });
+
+// Tab logic
+document.querySelectorAll(".tab").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    el.classList.add("active");
+    const tab = el.getAttribute("data-tab");
+    document.getElementById("invTab").style.display = tab==="inv" ? "" : "none";
+    document.getElementById("movTab").style.display = tab==="mov" ? "" : "none";
+  });
+});
+
+(async () => {
+  try{
+    await loadInventory();
+    await loadMovements();
+  }catch(e){
+    console.error(e);
+    alert("Error loading data. Did you pass ?token=<service_or_anon_key>&url=<SUPABASE_URL>?\n\n" + e.message);
+  }
+})();
+</script>
+</body>
+</html>
