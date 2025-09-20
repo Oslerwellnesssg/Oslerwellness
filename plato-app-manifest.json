@@ -1,0 +1,26 @@
+{
+  "name": "Osler Wellness",
+  "version": "1.0.0",
+  "app-platform-version": "1.0",
+  "author": "Osler Wellness",
+  "email": "it@oslerwellness.sg",
+  "privacy-policy": "https://oslerwellness.netlify.app/privacy.html",
+  "icon": "https://oslerwellness.netlify.app/icon.png",
+  "description": "Dispensing & live inventory from Shopify inside Plato.",
+  "app-type": "external",
+  "app-secret": "OwAppSecret-raai5FYec0",
+  "locations": [
+    {
+      "location": "patient-tab",
+      "name": "Osler Wellness",
+      "url": "https://oslerwellness.netlify.app/records.html",
+      "type": "external"
+    },
+    {
+      "location": "sidebar",
+      "name": "Osler Wellness",
+      "url": "https://oslerwellness.netlify.app/records.html",
+      "type": "iframe"
+    }
+  ]
+}
