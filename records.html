@@ -1,11 +1,133 @@
 <!doctype html>
-<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Records</title>
-<style>body{margin:0;background:#1f2937;color:#e5e7eb;font-family:system-ui,Arial} .shell{max-width:900px;margin:40px auto;padding:0 16px}</style>
+<html><head><meta charset="utf-8"/><title>Osler Wellness — Patient Dispense Records</title>
+  <style>
+    :root{--bg:#3b4d54;--card:#445a62;--text:#fff;--accent:#fe8d3f;--head:#3f5962;--border:#5e757d;--danger:#ff6b6b;}
+    *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+    .container{padding:20px;max-width:1200px;margin:0 auto}
+    .topbar{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+    h2{margin:0;font-weight:650}
+    .btn{border:1px solid var(--border);padding:8px 12px;border-radius:10px;background:var(--accent);color:var(--text);cursor:pointer}
+    .btn.secondary{background:transparent;border-color:var(--accent)}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;opacity:.9}
+    .card{border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;background:var(--card)}
+    table{border-collapse:collapse;width:100%;overflow:hidden;border-radius:8px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--border)}
+    th{background:var(--head);text-align:left}
+    tr:nth-child(even) td{background:#364950}
+    .status-pill{padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px}
+    .pre{border-color:var(--danger);color:var(--danger);font-weight:700}
+    .row-note{opacity:.8;font-size:13px}
+  </style>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    const SB_URL="https://zwocjuiqkmfgtenzjdcy.supabase.co";
+    const SB_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b2NqdWlxa21mZ3RlbnpqZGN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5Njk4MDEsImV4cCI6MjA3MjU0NTgwMX0.c4OyvfF3tfFM6uwaEcbUMh6WJJqythetshxThrMuAQg";
+    let sb=null; function sbc(){ if(!sb) sb = supabase.createClient(SB_URL, SB_ANON); return sb; }
+
+    function qp(n){ const p=new URLSearchParams(location.search); return p.get(n)||null; }
+    function b64urlDecode(s){ try{ return atob(s.replace(/-/g,'+').replace(/_/g,'/')); }catch(e){ return null; } }
+    function safeJwtDecode(t){ try{ const parts=String(t||'').split('.'); if(parts.length!==3) return null; const json=b64urlDecode(parts[1]); if(!json) return null; return JSON.parse(decodeURIComponent(escape(json))); }catch(e){ return null; } }
+    function extractHexId(str){ const m=String(str||'').match(/[a-f0-9]{24,36}/i); return m?m[0]:null; }
+    function resolvePid(){
+      const direct = qp('patient') || qp('pid') || null;
+      if(direct) return direct;
+      const tk = qp('token');
+      if(!tk) return null;
+      const pl = safeJwtDecode(tk);
+      if(pl){
+        const keys=['patient_id','platoId','PlatoID','id','patientId'];
+        for(const k of keys){ if(pl[k]) return String(pl[k]); }
+        if(pl.patient && (pl.patient.id||pl.patient.PlatoID)) return String(pl.patient.id||pl.patient.PlatoID);
+        for(const [k,v] of Object.entries(pl)){ if(/id/i.test(k)&&(typeof v==='string'||typeof v==='number')) return String(v); }
+      }
+      // last resort: find a 24-36 hex id inside the token
+      const hex = extractHexId(tk);
+      return hex || null;
+    }
+
+    let PID=null;
+
+    function keepQS(href){ const qs=location.search; return href + (qs? (href.includes('?')?'&':'?') + qs.slice(1) : ''); }
+
+    async function loadRows(){
+      const note=document.getElementById('note');
+      if(!PID){
+        note.innerHTML = 'Tip: Open from a patient record in Plato. Redirecting to Inventory…';
+        // Left-menu case: go to inventory if we do not have a patient context
+        location.href = keepQS('inventory.html');
+        return;
+      }
+      const { data, error } = await sbc()
+        .from('movements_with_products')
+        .select('id,created_at,type,product_name,sku,from_loc,qty_out,doctor_initials,remarks,voided,product_id,unit_price,line_total')
+        .eq('patient_id', PID)
+        .order('created_at', { ascending:false })
+        .limit(200);
+      const tb = document.getElementById('tbody'); tb.innerHTML='';
+      if(error){ tb.innerHTML = '<tr><td colspan="11">Error: '+error.message+'</td></tr>'; return; }
+      if(!data || !data.length){ tb.innerHTML='<tr><td colspan="11">No dispenses yet.</td></tr>'; return; }
+
+      for(const r of data){
+        const isPre = r.type === 'preorder';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${new Date(r.created_at).toLocaleString()}</td>
+          <td>${r.product_name||''}</td>
+          <td>${r.sku||''}</td>
+          <td>${r.qty_out||0}</td>
+          <td>${r.from_loc||''}</td>
+          <td>${r.doctor_initials||''}</td>
+          <td>${(r.remarks||'').replaceAll('[PRE-ORDER]','').trim()} ${isPre?'<strong style="color:var(--danger)">[PRE-ORDER]</strong>':''}</td><td>${r.unit_price!=null?('$'+Number(r.unit_price).toFixed(2)):''}</td><td>${r.line_total!=null?('$'+Number(r.line_total).toFixed(2)):''}</td>
+          <td>${isPre?'<span class="status-pill pre">PRE-ORDER</span>': (r.voided? 'Voided' : 'Dispensed')}</td>
+          <td>
+            <button class="btn secondary" onclick="voidTxn('${r.id}')" ${r.voided?'disabled':''}>Void</button>
+            <button class="btn" onclick="deleteTxn('${r.id}')" ${r.voided?'':'disabled'}>Delete</button>
+          </td>`;
+        tb.appendChild(tr);
+      }
+    }
+
+    async function voidTxn(id){
+      if(!confirm('Void this transaction?')) return;
+      const { error } = await sbc().rpc('void_transaction',{ p_txn: id });
+      if(error) return alert('Void failed: '+error.message);
+      loadRows();
+    }
+
+    async function deleteTxn(id){
+      const pw = prompt('Enter delete password');
+      if(!pw) return;
+      const { error } = await sbc().rpc('delete_transaction',{ p_txn: id, p_password: pw });
+      if(error) return alert('Delete failed: '+error.message);
+      loadRows();
+    }
+
+    document.addEventListener('DOMContentLoaded', ()=>{
+      PID = resolvePid();
+      document.getElementById('pid').textContent = 'patient: ' + (PID || '(none)');
+      document.getElementById('btnInv').href = keepQS('inventory.html');
+      document.getElementById('btnDispense').href = keepQS('dispense.html');
+      loadRows();
+    });
+  </script>
 </head>
 <body>
-  <div class="shell">
-    <h1>Records</h1>
-    <p>This placeholder remains so existing links don't 404. Your original records UI can be re-added here.</p>
+  <div class="container">
+    <div class="topbar">
+      <h2>Osler Wellness — Patient Dispense Records</h2>
+      <span id="pid" class="pill">patient: …</span>
+      <div style="flex:1"></div>
+      <a id="btnInv" class="btn secondary" href="#">Inventory</a>
+      <a id="btnDispense" class="btn" href="#">Dispense</a>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Product</th><th>SKU</th><th>Qty</th><th>From</th><th>Doc</th><th>Remarks</th><th>Unit $</th><th>Total $</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="tbody"><tr><td colspan="11">Loading…</td></tr></tbody>
+      </table>
+      <div id="note" class="row-note" style="margin-top:10px">Tip: To delete permanently, transaction must be VOIDed first and you need the password.</div>
+    </div>
   </div>
 </body></html>
