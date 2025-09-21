@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Inventory (Live from Shopify)</title>
+  <style>
+    :root{ --bg:#22343d; --panel:#2c3e46; --text:#e8f1f5; --muted:#9fb3bd; --accent:#ff8a3d; --accent2:#5ac8fa; }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+    .wrap{max-width:1080px;margin:32px auto;padding:0 16px;}
+    h1{font-size:22px;margin:0 0 16px 0;}
+    .toolbar{display:flex;gap:12px;justify-content:flex-end;margin-bottom:8px;flex-wrap:wrap}
+    .btn{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+    .btn.sync{background:var(--accent2);color:#04212a}
+    .btn.movement{background:var(--accent);color:#3a1b00}
+    .note{font-size:12px;color:var(--muted);background:#1b2a31;border-radius:10px;padding:8px 12px;margin:10px 0}
+    .panel{background:var(--panel);border-radius:14px;padding:12px 12px 6px 12px;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:12px 10px;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}
+    th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="toolbar">
+      <button class="btn movement" id="btnMovement">Movement report</button>
+      <button class="btn sync" id="btnSync">Sync now</button>
+    </div>
+    <h1>Inventory (Live from Shopify)</h1>
+    <div class="note">How this updates: Live updates arrive via Shopify Flow → Netlify Function → Supabase. Click <b>Sync now</b> to force-refresh.</div>
+    <div class="panel">
+      <table id="invTable">
+        <thead>
+          <tr>
+            <th>Product</th><th>SKU</th><th>Barcode</th><th>Price</th><th>SV</th><th>RH1</th><th>Total</th>
+          </tr>
+        </thead>
+        <tbody id="invBody">
+          <!-- Your app's existing JS can continue to populate rows.
+               If you already have rows rendered server-side, they will appear here. -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Preserve the existing token (Plato passes it in the URL). Reuse it when opening movement.html
+    function getParam(name){
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name);
+    }
+    function tokenPart(){
+      const t = getParam('token');
+      return t ? ('?token=' + encodeURIComponent(t)) : '';
+    }
+
+    document.getElementById('btnMovement').addEventListener('click', () => {
+      // Navigate to movement.html in the same bundle, carrying the Plato token through
+      window.location.href = 'movement.html' + tokenPart();
+    });
+
+    document.getElementById('btnSync').addEventListener('click', async () => {
+      try{
+        const res = await fetch('/.netlify/functions/shopify-sync-now', { method: 'POST' });
+        if(!res.ok){
+          const msg = await res.text();
+          alert('Sync failed: ' + msg);
+          return;
+        }
+        alert('Sync complete');
+        // If your page listens to DB changes in real-time, you might not need this reload.
+        location.reload();
+      }catch(err){
+        alert('Sync failed: ' + (err && err.message ? err.message : err));
+      }
+    });
+  </script>
+</body>
+</html>
