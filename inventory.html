@@ -35,45 +35,30 @@
             <th>Product</th><th>SKU</th><th>Barcode</th><th>Price</th><th>SV</th><th>RH1</th><th>Total</th>
           </tr>
         </thead>
-        <tbody id="invBody">
-          <!-- Your app's existing JS can continue to populate rows.
-               If you already have rows rendered server-side, they will appear here. -->
-        </tbody>
+        <tbody id="invBody"><!-- existing JS continues to populate rows --></tbody>
       </table>
     </div>
   </div>
 
   <script>
-    // Preserve the existing token (Plato passes it in the URL). Reuse it when opening movement.html
-    function getParam(name){
-      const url = new URL(window.location.href);
-      return url.searchParams.get(name);
-    }
-    function tokenPart(){
-      const t = getParam('token');
-      return t ? ('?token=' + encodeURIComponent(t)) : '';
-    }
+    // Keep Plato token in the URL so sub-pages can read Supabase
+    function getParam(name){ try{ return new URL(window.location.href).searchParams.get(name);}catch{ return null; } }
+    function tokenPart(){ const t=getParam('token'); return t ? ('?token='+encodeURIComponent(t)) : ''; }
 
     document.getElementById('btnMovement').addEventListener('click', () => {
-      // Navigate to movement.html in the same bundle, carrying the Plato token through
+      // movement.html must live next to this file in the same bundle
       window.location.href = 'movement.html' + tokenPart();
     });
 
     document.getElementById('btnSync').addEventListener('click', async () => {
       try{
         const res = await fetch('/.netlify/functions/shopify-sync-now', { method: 'POST' });
-        if(!res.ok){
-          const msg = await res.text();
-          alert('Sync failed: ' + msg);
-          return;
-        }
+        if(!res.ok){ alert('Sync failed: '+(await res.text())); return; }
         alert('Sync complete');
-        // If your page listens to DB changes in real-time, you might not need this reload.
         location.reload();
-      }catch(err){
-        alert('Sync failed: ' + (err && err.message ? err.message : err));
-      }
+      }catch(err){ alert('Sync failed: '+(err?.message || err)); }
     });
   </script>
 </body>
 </html>
+
