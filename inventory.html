@@ -1,0 +1,90 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventory (Live from Shopify)</title>
+  <style>
+    body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;background:#0d1b24;color:#e6eef2;margin:0}
+    .wrap{max-width:1080px;margin:32px auto;padding:0 16px}
+    h1{font-size:22px;margin:0 0 12px}
+    .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    button{background:#1f9cf0;color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
+    button.secondary{background:#204051}
+    .note{background:#122631;color:#bdd7e3;padding:10px 12px;border-radius:8px;font-size:12px;opacity:.9;margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;background:#122631;border-radius:12px;overflow:hidden}
+    th,td{padding:12px 10px;border-bottom:1px solid #223a48}
+    th{background:#163242;text-align:left;font-size:12px;letter-spacing:.02em;text-transform:uppercase;color:#9fc1d3}
+    tr:hover td{background:#152a36}
+    .right{text-align:right}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="bar">
+      <h1>Inventory (Live from Shopify)</h1>
+      <div>
+        <button id="syncBtn">Sync now</button>
+        <a href="movement.html" id="moveLink"><button class="secondary" type="button">Movement report</button></a>
+      </div>
+    </div>
+
+    <div class="note">How this updates: Live updates arrive via Shopify Flow → Netlify Function → Supabase. This page reads from Supabase. Click <em>Sync now</em> to force-refresh.</div>
+
+    <table id="tbl">
+      <thead><tr>
+        <th>Product</th><th>SKU</th><th>Barcode</th><th class="right">Price</th>
+        <th class="right">SV</th><th class="right">RH1</th><th class="right">Total</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+(function(){
+  // Read Supabase info from query string or fallbacks (edit these if you prefer to hardcode)
+  const qs = new URLSearchParams(location.search);
+  const SB_URL = qs.get('sbUrl') || '%%SUPABASE_URL%%';
+  const SB_ANON = qs.get('sbAnon') || '%%SUPABASE_ANON%%';
+
+  function error(msg){ alert(msg); }
+
+  async function load() {
+    const url = SB_URL.replace(/\/$/,'') + "/rest/v1/products_for_ui?select=name,sku,barcode,price,sv,rh1";
+    const res = await fetch(url, { headers: { apikey: SB_ANON, Authorization: "Bearer "+SB_ANON }});
+    if(!res.ok){ error("Failed to load products_for_ui: " + res.status + " " + (await res.text())); return; }
+    const rows = await res.json();
+    const tbody = document.querySelector("#tbl tbody");
+    tbody.innerHTML = "";
+    for(const r of rows){
+      const total = (Number(r.sv||0)+Number(r.rh1||0));
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${r.name||""}</td>
+        <td>${r.sku||""}</td>
+        <td>${r.barcode||""}</td>
+        <td class="right">${(r.price!=null)?Number(r.price).toFixed(2):""}</td>
+        <td class="right">${r.sv??""}</td>
+        <td class="right">${r.rh1??""}</td>
+        <td class="right">${total}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  document.getElementById("syncBtn").addEventListener("click", async () => {
+    try{
+      const res = await fetch("/.netlify/functions/shopify-sync-now", { method:"POST" });
+      if(!res.ok){ const t = await res.text(); return error("Sync failed: "+t); }
+      alert("Sync complete");
+      await load();
+    }catch(e){ error("Sync failed: " + e.message); }
+  });
+
+  if(!SB_URL || SB_URL.startsWith("%%")) {
+    console.warn("Supabase URL/anon not provided. Pass ?sbUrl=...&sbAnon=... or edit the placeholders.");
+  }
+  load();
+})();
+</script>
+</body>
+</html>
