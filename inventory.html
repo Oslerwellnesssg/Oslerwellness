@@ -1,5 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- Supabase env (inline) -->
+<script>
+  (function () {
+    var u = "https://zwocjuiqkmfgtenzjdcy.supabase.co";
+    var k = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b2NqdWlxa21mZ3RlbnpqZGN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5Njk4MDEsImV4cCI6MjA3MjU0NTgwMX0.c4OyvfF3tfFM6uwaEcbUMh6WJJqythetshxThrMuAQg";
+    if (!window.SUPABASE_URL) window.SUPABASE_URL = u;
+    if (!window.SUPABASE_ANON_KEY) window.SUPABASE_ANON_KEY = k;
+    try { console.log("[inline] injected", window.SUPABASE_URL); } catch (e) {}
+  })();
+</script>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
