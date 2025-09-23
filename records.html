@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Patient Dispensing Records</title>
+<style>
+  :root{--bg:#0f1a21;--card:#15252e;--text:#dfe8ee;--muted:#8aa0ad;--accent:#ff8a3d;--pill:#223946;--pillTxt:#bfe3ff}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1080px;margin:28px auto;padding:0 16px}
+  h1{margin:0 0 10px 0;font-size:28px;font-weight:700}
+  .sub{margin:0 0 16px 0;color:var(--muted)}
+  .actions{display:flex;gap:10px;margin:8px 0 16px 0;justify-content:flex-end}
+  button{background:var(--accent);border:none;color:#111;padding:8px 14px;border-radius:10px;font-weight:700;cursor:pointer}
+  .btn-secondary{background:var(--pill);color:var(--pillTxt)}
+  .panel{background:var(--card);padding:12px;border-radius:14px;box-shadow:0 0 0 1px rgba(255,255,255,.03) inset}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  thead th{color:var(--muted);text-align:left;font-weight:600;padding:0 12px}
+  tbody tr{background:#12222a}
+  td{padding:12px}
+  .right{text-align:right}
+  .muted{color:var(--muted)}
+  .pill{background:var(--pill);color:var(--pillTxt);padding:2px 8px;border-radius:999px;font-size:12px}
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const SUPABASE_URL = "https://zwocjuiqkmfgtenzjdcy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3b2NqdWlxa21mZ3RlbnpqZGN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY5Njk4MDEsImV4cCI6MjA3MjU0NTgwMX0.c4OyvfF3tfFM6uwaEcbUMh6WJJqythetshxThrMuAQg";
+const qs = new URLSearchParams(location.search);
+const urlOverride = qs.get('supabase_url');
+const keyOverride = qs.get('supabase_anon_key');
+const sb = window.supabase.createClient(urlOverride || SUPABASE_URL, keyOverride || SUPABASE_ANON_KEY);
+
+async function firstSource(sources, select) {
+  for (const src of sources) {
+    try {
+      const { data: rows, error: err } = await sb.from(src).select(select).limit(1);
+      if (!err) return src;
+    } catch(e){}
+  }
+  throw new Error("No suitable source found");
+}
+
+function money(v) {
+  if (v == null || v === '') return '0.00';
+  const n = Number(v);
+  return isFinite(n) ? n.toFixed(2) : String(v);
+}
+
+function get(obj, keys, def=null) {
+  for (const k of keys) {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null) return obj[k];
+  }
+  return def;
+}
+</script>
+</head>
+
+<body>
+<div class="wrap">
+  <h1>Patient Dispensing Records</h1>
+  <div class="actions">
+    <a class="btn-secondary" href="./inventory.html" style="text-decoration:none;display:inline-block;padding:8px 14px;border-radius:10px">Inventory</a>
+  </div>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Product</th><th>SKU</th><th class="right">Qty</th><th>From</th><th>Doc</th><th>Remarks</th><th>Status</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function loadRecords(){
+  const qs = new URLSearchParams(location.search);
+  const pid = qs.get('patient_id');
+  const body = document.getElementById('rows');
+  if (!pid) { body.innerHTML = "<tr><td class='muted'>Add ?patient_id=... to the URL</td></tr>"; return; }
+  const candidates = ["v_ow_movement_report","recent_movements","transactions_with_products"];
+  const src = await firstSource(candidates, "*");
+  const { data, error } = await sb.from(src).select("*").eq('patient_id', pid).order('created_at', {ascending: false});
+  if (error) { body.innerHTML = `<tr><td class='muted'>Error: ${error.message}</td></tr>`; return; }
+  body.innerHTML="";
+  for (const r of (data||[])) {
+    const ts = get(r, ["ts","created_at","inserted_at"], "");
+    const pname = get(r, ["name","product","title"], "");
+    const sku = get(r, ["sku"], "");
+    const qty = get(r, ["qty","quantity"], 0);
+    const from = get(r, ["from_loc","location","loc"], "");
+    const doc = get(r, ["doctor","doc","doctor_initials"], "");
+    const remarks = get(r, ["remarks","notes"], "");
+    const status = get(r, ["status"], "");
+    body.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td>${new Date(ts||Date.now()).toLocaleString()}</td>
+        <td>${pname}</td>
+        <td>${sku}</td>
+        <td class="right">${qty}</td>
+        <td>${from}</td>
+        <td>${doc}</td>
+        <td>${remarks}</td>
+        <td>${status}</td>
+      </tr>`);
+  }
+  if (!data || data.length===0) body.innerHTML = "<tr><td class='muted'>No records.</td></tr>";
+}
+loadRecords();
+</script>
+</body>
+</html>
